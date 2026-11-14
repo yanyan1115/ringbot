@@ -10,8 +10,8 @@
  * Voice: amr -> ffmpeg 16k wav (dynaudnorm) -> Whisper-compatible API (default Groq); the transcript goes into content.
  *      WECOM_STT_PROVIDER=elevenlabs uses ElevenLabs Scribe first (falls back to the Whisper API).
  * Call bubble: WECOM_CALL_LOG points at the phone plugin's call log (jsonl); every 2 s new lines are checked and
- *      "ᯅ 通话时长 mm:ss" / "ᯅ 未接通" is sent. Only sent if the user wrote within the last
- *      WECOM_CALL_BUBBLE_WINDOW_H hours (default 0 = always).
+ *      "ᯅ 通话时长 mm:ss" / "ᯅ 未接通" is sent, only for lines with "via":"wechat"
+ *      (calls started from WeChat: the model passes via=wechat to dial).
  */
 import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
@@ -121,6 +121,7 @@ const mcp = new Server(
       '用户在个人微信里发的消息走这里（企业微信应用→微信插件），用户在微信上看不到这个会话。要让用户在微信里看到，必须调 wecom 的 reply 工具，把 user 原样传回去。',
       '消息以 <channel source="wecom" user="..." msg_type="..." ts="..."> 到达；有 image_path 就 Read 那张图；语音已自动转成文字放在正文里（「(语音) 转写：…」，转写难免认错字，按意思读）；原始 amr 在 voice_path。',
       '微信里纯文本，不打 markdown；每句一条、可以多条并行发。用户在哪个入口说话就回哪个入口，别跑去别的渠道回微信的消息。',
+      '用户在微信里叫你打电话、或给微信派的活打电话报完工时，dial 带上 via="wechat"，挂断后微信里会冒「ᯅ 通话时长」气泡；别的入口来的电话不带。',
     ].join('\n'),
   },
 )
@@ -227,15 +228,8 @@ async function transcribe(amr: string): Promise<{ text?: string; err?: string }>
   }
 }
 
-// ---- Call bubble: the phone plugin appends one line {at,dir,answered,seconds} per call to WECOM_CALL_LOG; we forward it ----
-const LAST_INBOUND = join(STATE, 'last-inbound.json') // 最后一条微信消息的时间，存盘，重连后还在
-const lastInbound = new Map<string, number>(Object.entries((() => { try { return JSON.parse(readFileSync(LAST_INBOUND, 'utf8')) } catch { return {} } })()).map(([k, v]) => [k, Number(v)]))
-function noteInbound(user: string) {
-  lastInbound.set(user, Date.now())
-  try { writeFileSync(LAST_INBOUND, JSON.stringify(Object.fromEntries(lastInbound)), { mode: 0o600 }) } catch (e: any) { console.error(`[wecom] last-inbound save failed: ${e?.code ?? 'error'}`) }
-}
+// ---- Call bubble: the phone plugin appends one line {at,dir,answered,seconds,via?} per call to WECOM_CALL_LOG; we forward it ----
 const CALL_LOG = (ENV.WECOM_CALL_LOG || '').replace(/^~(?=\/|$)/, homedir()) // ~ is expanded, same as on the phone side
-const CALL_WINDOW_H = ENV.WECOM_CALL_BUBBLE_WINDOW_H === undefined || ENV.WECOM_CALL_BUBBLE_WINDOW_H === '' ? 0 : Number(ENV.WECOM_CALL_BUBBLE_WINDOW_H)
 // CALL-HELPERS-BEGIN
 function fmtDuration(sec: number): string {
   sec = Math.max(0, Math.round(sec))
@@ -259,13 +253,10 @@ function readNewLines(path: string, offset: number): { lines: string[]; offset: 
   return { lines: buf.subarray(0, end).toString('utf8').split('\n').filter(Boolean), offset: offset + end + 1 }
 }
 // CALL-HELPERS-END
-async function sendBubble(rec: { answered?: boolean; seconds?: number }) {
+async function sendBubble(rec: { answered?: boolean; seconds?: number; via?: string }) {
   const user = (ENV.WECOM_ALLOWED_USERS ?? '').split(',').filter(Boolean)[0]
   if (!user) return
-  if (CALL_WINDOW_H > 0 && Date.now() - (lastInbound.get(user) ?? 0) > CALL_WINDOW_H * 3600 * 1000) {
-    console.error(`[wecom] call bubble skipped: no WeChat message in the last ${CALL_WINDOW_H}h`)
-    return
-  }
+  if (rec.via !== 'wechat') return // only calls started from WeChat (dial with via=wechat) get a bubble
   const d = await api('message/send', { touser: user, msgtype: 'text', agentid: AGENT_ID, text: { content: bubbleText(rec) } })
   if (d?.errcode !== 0) console.error(`[wecom] call bubble send failed errcode ${d?.errcode}`)
 }
@@ -297,7 +288,6 @@ async function pump() {
     const user = m.FromUserName ?? ''
     if (type === 'event') continue // subscribe / enter-app events etc., ignore
     rememberUser(user)
-    noteInbound(user)
     const meta: Record<string, string> = {
       user: toAlias(user), msg_type: type,
       ts: new Date(Number(m.CreateTime ?? 0) * 1000).toISOString(),

@@ -139,7 +139,7 @@ claude --plugin-dir /path/to/ringbot/plugin \
 - ringringring 侧：`RINGRINGRING_CALL_LOG=/path/to/calls.jsonl`（默认 `~/.local/state/ringringring/calls.jsonl`）
 - 本插件侧（在 `wecom.env` 里）：`WECOM_CALL_LOG=/path/to/calls.jsonl`
 
-两边路径必须是同一个文件。每通电话结束 ringringring 追加一行 `{"at","dir","answered","seconds"}`，本插件读到就在微信里发气泡。不配 `WECOM_CALL_LOG` 则气泡功能关闭。
+两边路径必须是同一个文件。每通电话结束 ringringring 追加一行 `{"at","dir","answered","seconds","via"}`；只有 `"via":"wechat"` 的（Claude 拨号时带了 `via="wechat"`，即用户在微信里叫打、或给微信派的活报完工）才在微信里发气泡，别的入口来的电话不发。不配 `WECOM_CALL_LOG` 则气泡功能关闭。
 
 `report-done` skill 随插件一起加载；里面「安静时段 23:00～08:00」那一行请改成你自己的作息。
 
@@ -162,7 +162,6 @@ claude --plugin-dir /path/to/ringbot/plugin \
 | `WECOM_ENCODING_AES_KEY` | 无，必填 | 回调 EncodingAESKey（回调程序用） |
 | `WECOM_ALLOWED_USERS` | 空 | 白名单 UserID，逗号分隔。务必填；也是气泡发送的对象（第一个） |
 | `WECOM_CALL_LOG` | 空（关） | 电话插件的通话记录文件，支持 `~` |
-| `WECOM_CALL_BUBBLE_WINDOW_H` | `0` | 只在用户最近 N 小时内发过微信时才发气泡；0 = 总是发 |
 | `WECOM_STT_PROVIDER` | `openai` | `openai`（任何 OpenAI 兼容的 /audio/transcriptions，默认 Groq）或 `elevenlabs`（Scribe，失败回落到前者） |
 | `WECOM_STT_ENV_FILE` | 空 | 存 `GROQ_API_KEY`（或 `STT_KEY`）的文件路径；不配则没有 Whisper 转写 |
 | `WECOM_STT_ELEVEN_ENV_FILE` | 同 `WECOM_STT_ENV_FILE` | 存 `ELEVENLABS_API_KEY` 的文件路径 |

@@ -138,7 +138,7 @@ Follow the README at <https://github.com/yanyan1115/ringringring> and set up Lin
 - ringringring side: `RINGRINGRING_CALL_LOG=/path/to/calls.jsonl` (default `~/.local/state/ringringring/calls.jsonl`)
 - this plugin (in `wecom.env`): `WECOM_CALL_LOG=/path/to/calls.jsonl`
 
-It must be the same file. When a call ends, ringringring appends one line `{"at","dir","answered","seconds"}` and this plugin turns it into a WeChat bubble. Without `WECOM_CALL_LOG` the bubble feature is off.
+It must be the same file. When a call ends, ringringring appends one line `{"at","dir","answered","seconds","via"}`. Only lines with `"via":"wechat"` become a WeChat bubble (Claude passes `via="wechat"` to `dial` when the user asked for the call in WeChat or when reporting a job sent from WeChat); calls from other channels get none. Without `WECOM_CALL_LOG` the bubble feature is off.
 
 The `report-done` skill loads with the plugin. Edit its "quiet hours 23:00 to 08:00" line to match your own schedule.
 
@@ -161,7 +161,6 @@ Variables in `wecom.env` (`KEY=value`, one per line, `#` for comments):
 | `WECOM_ENCODING_AES_KEY` | none, required | Callback EncodingAESKey (used by the callback receiver) |
 | `WECOM_ALLOWED_USERS` | empty | Whitelisted UserIDs, comma-separated. Set it. The first entry is also the recipient of call bubbles |
 | `WECOM_CALL_LOG` | empty (off) | Call log file written by the phone plugin; `~` is expanded |
-| `WECOM_CALL_BUBBLE_WINDOW_H` | `0` | Only send a bubble if the user wrote in the last N hours; 0 = always |
 | `WECOM_STT_PROVIDER` | `openai` | `openai` (any OpenAI-compatible /audio/transcriptions, default Groq) or `elevenlabs` (Scribe, falls back to the former on failure) |
 | `WECOM_STT_ENV_FILE` | empty | Path of a file holding `GROQ_API_KEY` (or `STT_KEY`); without it there is no Whisper transcription |
 | `WECOM_STT_ELEVEN_ENV_FILE` | same as `WECOM_STT_ENV_FILE` | Path of a file holding `ELEVENLABS_API_KEY` |
