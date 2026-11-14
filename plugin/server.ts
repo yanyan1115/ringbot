@@ -228,7 +228,12 @@ async function transcribe(amr: string): Promise<{ text?: string; err?: string }>
 }
 
 // ---- Call bubble: the phone plugin appends one line {at,dir,answered,seconds} per call to WECOM_CALL_LOG; we forward it ----
-const lastInbound = new Map<string, number>() // time of the user's last WeChat message (memory only; after a restart it counts as not recent)
+const LAST_INBOUND = join(STATE, 'last-inbound.json') // 最后一条微信消息的时间，存盘，重连后还在
+const lastInbound = new Map<string, number>(Object.entries((() => { try { return JSON.parse(readFileSync(LAST_INBOUND, 'utf8')) } catch { return {} } })()).map(([k, v]) => [k, Number(v)]))
+function noteInbound(user: string) {
+  lastInbound.set(user, Date.now())
+  try { writeFileSync(LAST_INBOUND, JSON.stringify(Object.fromEntries(lastInbound)), { mode: 0o600 }) } catch (e: any) { console.error(`[wecom] last-inbound save failed: ${e?.code ?? 'error'}`) }
+}
 const CALL_LOG = (ENV.WECOM_CALL_LOG || '').replace(/^~(?=\/|$)/, homedir()) // ~ is expanded, same as on the phone side
 const CALL_WINDOW_H = ENV.WECOM_CALL_BUBBLE_WINDOW_H === undefined || ENV.WECOM_CALL_BUBBLE_WINDOW_H === '' ? 0 : Number(ENV.WECOM_CALL_BUBBLE_WINDOW_H)
 // CALL-HELPERS-BEGIN
@@ -257,7 +262,10 @@ function readNewLines(path: string, offset: number): { lines: string[]; offset: 
 async function sendBubble(rec: { answered?: boolean; seconds?: number }) {
   const user = (ENV.WECOM_ALLOWED_USERS ?? '').split(',').filter(Boolean)[0]
   if (!user) return
-  if (CALL_WINDOW_H > 0 && Date.now() - (lastInbound.get(user) ?? 0) > CALL_WINDOW_H * 3600 * 1000) return
+  if (CALL_WINDOW_H > 0 && Date.now() - (lastInbound.get(user) ?? 0) > CALL_WINDOW_H * 3600 * 1000) {
+    console.error(`[wecom] call bubble skipped: no WeChat message in the last ${CALL_WINDOW_H}h`)
+    return
+  }
   const d = await api('message/send', { touser: user, msgtype: 'text', agentid: AGENT_ID, text: { content: bubbleText(rec) } })
   if (d?.errcode !== 0) console.error(`[wecom] call bubble send failed errcode ${d?.errcode}`)
 }
@@ -289,7 +297,7 @@ async function pump() {
     const user = m.FromUserName ?? ''
     if (type === 'event') continue // subscribe / enter-app events etc., ignore
     rememberUser(user)
-    lastInbound.set(user, Date.now())
+    noteInbound(user)
     const meta: Record<string, string> = {
       user: toAlias(user), msg_type: type,
       ts: new Date(Number(m.CreateTime ?? 0) * 1000).toISOString(),
