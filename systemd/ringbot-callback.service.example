@@ -1,0 +1,17 @@
+# /etc/systemd/system/ringbot-callback.service
+# Replace /opt/ringbot with your install path.
+[Unit]
+Description=WeCom callback receiver (127.0.0.1:8765)
+After=network-online.target
+
+[Service]
+# WECOM_ENV / WECOM_PORT can be set here via Environment= if you do not use the defaults
+# Optional: run as a dedicated user that owns /var/lib/wecom-agent and can read the env file
+# User=wecom
+ExecStart=/opt/ringbot/.venv/bin/python -I /opt/ringbot/callback/callback_server.py
+Restart=on-failure
+RestartSec=3
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

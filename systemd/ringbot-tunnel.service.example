@@ -1,0 +1,15 @@
+# /etc/systemd/system/ringbot-tunnel.service
+# Cloudflare named tunnel that exposes the callback to WeCom.
+# /etc/wecom-agent/tunnel.env (mode 600) holds TUNNEL_TOKEN=<your tunnel token>; never commit it.
+[Unit]
+Description=Cloudflare tunnel for the WeCom callback
+After=network-online.target ringbot-callback.service
+
+[Service]
+EnvironmentFile=/etc/wecom-agent/tunnel.env
+ExecStart=/usr/local/bin/cloudflared --no-autoupdate tunnel run
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
